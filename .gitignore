@@ -1,0 +1,39 @@
+# Node dependency directories
+node_modules/
+*/node_modules/
+
+# Build and cache artifacts
+.next/
+apps/web/.next/
+dist/
+build/
+.turbo/
+.cache/
+web-bundles/
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+apps/web/.env
+apps/web/.env.*
+!apps/web/.env.example
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Supabase CLI state (if generated locally)
+.supabase/
+
+.bmad-core/
+brain/

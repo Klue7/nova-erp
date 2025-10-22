@@ -1,0 +1,10 @@
+{
+  "name": "nova-erp-root",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "start:web": "pnpm --filter web start",
+    "lint:web": "pnpm --filter web lint"
+  }
+}
