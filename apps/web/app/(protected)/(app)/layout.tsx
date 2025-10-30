@@ -11,12 +11,12 @@ export default async function ProtectedLayout({
   await guardRoute();
 
   return (
-    <div className="flex min-h-screen w-full bg-muted/20">
+    <div className="flex min-h-screen w-full bg-gradient-to-br from-secondary/95 via-secondary/90 to-background">
       <ProtectedSidebar />
       <div className="flex flex-1 flex-col">
         <ProtectedHeader />
         <AccessToast />
-        <div className="flex-1 overflow-y-auto bg-background">
+        <div className="flex-1 overflow-y-auto bg-background/95">
           <div className="mx-auto w-full max-w-6xl px-6 py-8">
             {children}
           </div>

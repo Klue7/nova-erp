@@ -101,12 +101,12 @@ export function LoginForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
+      <Card className="border border-border/70 bg-card/95 shadow-sm shadow-secondary/20 backdrop-blur">
         <CardHeader>
-          <CardTitle className="text-2xl">
+          <CardTitle className="text-2xl text-foreground">
             {mode === "password" ? "Sign in with password" : "Sign in with magic link"}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-muted-foreground">
             {mode === "password"
               ? "Enter your credentials to access Nova Bricks ERP."
               : "We’ll email you a secure, one-time link. No password required."}
@@ -115,13 +115,13 @@ export function LoginForm({
         <CardContent>
           <form onSubmit={handleLogin} className="flex flex-col gap-6">
             {enablePasswordAuth ? (
-              <div className="grid grid-cols-2 rounded-lg border border-border/70 p-1 text-sm">
+              <div className="grid grid-cols-2 rounded-lg border border-border/70 bg-background/80 p-1 text-sm shadow-inner shadow-secondary/10">
                 <button
                   type="button"
                   onClick={() => setMode("magic")}
                   className={`rounded-md px-3 py-2 transition ${
                     mode === "magic"
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-primary text-primary-foreground shadow-sm shadow-primary/40"
                       : "text-muted-foreground hover:bg-muted/60"
                   }`}
                 >
@@ -179,7 +179,7 @@ export function LoginForm({
                     setMessage(null);
                     router.refresh();
                   }}
-                  className="font-medium underline underline-offset-4"
+                  className="font-medium text-primary underline underline-offset-4"
                 >
                   Send another
                 </button>
@@ -188,7 +188,7 @@ export function LoginForm({
             ) : null}
             <Button
               type="submit"
-              className="w-full"
+              className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 hover:bg-primary/90"
               disabled={isLoading || !canSubmit}
             >
               {isLoading

@@ -9,6 +9,9 @@ type LogEventInput = {
   payload: Record<string, unknown>;
   correlationId?: string | null;
   causationId?: string | null;
+  tenantId?: string;
+  actorRole?: string;
+  occurredAt?: string | Date | null;
 };
 
 export async function logEvent(
@@ -20,6 +23,9 @@ export async function logEvent(
     payload,
     correlationId,
     causationId,
+    tenantId,
+    actorRole,
+    occurredAt,
   }: LogEventInput,
 ) {
   try {
@@ -30,10 +36,18 @@ export async function logEvent(
       return;
     }
 
-    const { error } = await supabase.from("events").insert({
-      tenant_id: profile.tenant_id,
+    const resolvedTenantId = tenantId ?? profile.tenant_id;
+    const resolvedRole = actorRole ?? profile.role;
+
+    if (!resolvedTenantId) {
+      console.warn("logEvent: tenant id missing, skipping insert.");
+      return;
+    }
+
+    const row: Record<string, unknown> = {
+      tenant_id: resolvedTenantId,
       actor_id: session.user.id,
-      actor_role: profile.role,
+      actor_role: resolvedRole,
       aggregate_type: aggregateType,
       aggregate_id: aggregateId,
       event_type: eventType,
@@ -41,7 +55,14 @@ export async function logEvent(
       source: "web",
       correlation_id: correlationId ?? null,
       causation_id: causationId ?? null,
-    });
+    };
+
+    if (occurredAt) {
+      row.occurred_at =
+        occurredAt instanceof Date ? occurredAt.toISOString() : occurredAt;
+    }
+
+    const { error } = await supabase.from("events").insert(row);
 
     if (error) {
       console.error("logEvent insert failed", error);

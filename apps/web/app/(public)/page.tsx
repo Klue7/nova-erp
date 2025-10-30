@@ -37,11 +37,12 @@ export default function LandingPage() {
       <LandingHero />
       <section
         id="modules"
-        className="w-full border-b border-border/60 bg-background py-16"
+        className="w-full border-b border-border/60 bg-gradient-to-b from-background via-background to-muted/30 py-16"
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6">
           <div className="space-y-4 text-left">
-            <p className="text-sm font-medium uppercase tracking-wide text-primary">
+            <p className="inline-flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-primary">
+              <span className="h-2 w-2 rounded-full bg-primary" />
               Production Flow
             </p>
             <h2 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
@@ -55,11 +56,14 @@ export default function LandingPage() {
           </div>
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
             {PRODUCTION_FLOW.map((module) => (
-              <Card key={module.href} className="border-border/70">
+              <Card
+                key={module.href}
+                className="border border-border/70 bg-card/95 shadow-sm shadow-secondary/20 transition hover:-translate-y-1 hover:border-primary/60 hover:shadow-lg hover:shadow-primary/20"
+              >
                 <CardHeader className="flex flex-row items-start justify-between space-y-0">
                   <div className="flex items-center gap-3">
                     <module.icon
-                      className="h-10 w-10 rounded-lg bg-primary/10 p-2 text-primary"
+                      className="h-10 w-10 rounded-xl bg-primary/10 p-2 text-primary shadow-inner shadow-primary/20"
                       aria-hidden
                     />
                     <div>
@@ -89,11 +93,12 @@ export default function LandingPage() {
       <QuickActions />
       <section
         id="platform"
-        className="w-full bg-background py-16 md:py-20"
+        className="w-full bg-gradient-to-b from-muted/40 via-background to-background py-16 md:py-20"
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6">
           <div className="space-y-4 text-left">
-            <p className="text-sm font-medium uppercase tracking-wide text-primary">
+            <p className="inline-flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-primary">
+              <span className="h-2 w-2 rounded-full bg-accent" />
               Platform
             </p>
             <h2 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
@@ -108,7 +113,7 @@ export default function LandingPage() {
             {PLATFORM_PILLARS.map((pillar) => (
               <Card
                 key={pillar.title}
-                className="border-border/70 bg-muted/30"
+                className="border border-border/70 bg-card/95 shadow-inner shadow-secondary/10 transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/20"
               >
                 <CardHeader>
                   <pillar.icon

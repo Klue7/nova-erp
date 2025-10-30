@@ -1,12 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { PROTECTED_PATH_PREFIXES } from "@/lib/navigation";
-import { cn } from "@/lib/utils";
 
 export function PublicNavbar() {
   const pathname = usePathname();
@@ -20,17 +20,24 @@ export function PublicNavbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-border/60 bg-secondary/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-8">
           <Link
             href="/"
-            className={cn(
-              "font-semibold tracking-tight",
-              "text-lg text-primary hover:text-primary/80",
-            )}
+            className="group flex items-center gap-2 font-semibold tracking-tight text-foreground transition hover:text-primary"
           >
-            Nova Bricks ERP
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 shadow-inner ring-1 ring-primary/40">
+              <Image
+                src="/images/logo.png"
+                alt="Nova Bricks"
+                width={20}
+                height={20}
+                className="h-5 w-5"
+                priority
+              />
+            </span>
+            <span className="text-lg">Nova Bricks ERP</span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
             <Link
@@ -55,7 +62,7 @@ export function PublicNavbar() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeSwitcher />
-          <Button asChild>
+          <Button asChild className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90">
             <Link href="/login">Sign in</Link>
           </Button>
         </div>

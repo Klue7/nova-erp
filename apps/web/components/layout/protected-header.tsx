@@ -6,6 +6,7 @@ import { Bell, Menu } from "lucide-react";
 
 import { MODULE_LINKS } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -47,7 +48,7 @@ export function ProtectedHeader() {
   }, []);
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border/70 bg-background/95 px-4">
+    <header className="flex h-16 items-center justify-between border-b border-border/70 bg-gradient-to-r from-secondary/95 via-secondary/90 to-background/95 px-4 shadow-sm backdrop-blur">
       <div className="flex items-center gap-3">
         <Sheet>
           <SheetTrigger asChild>
@@ -102,6 +103,7 @@ export function ProtectedHeader() {
         <Button variant="ghost" size="icon" aria-label="Notifications">
           <Bell className="h-5 w-5" aria-hidden />
         </Button>
+        <ThemeSwitcher />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

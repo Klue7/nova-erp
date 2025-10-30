@@ -17,6 +17,8 @@ type QuantityEventBase = StockpileEventBase & {
   quantityTonnes: number;
   reference?: string | null;
   notes?: string | null;
+  correlationId?: string | null;
+  occurredAt?: string | Date | null;
 };
 
 function assertProfile(profile: Awaited<ReturnType<typeof getUserProfile>>["profile"]) {
@@ -134,6 +136,8 @@ export async function recordReceipt({
   quantityTonnes,
   reference,
   notes,
+  correlationId,
+  occurredAt,
 }: QuantityEventBase) {
   const { profile } = await getUserProfile();
   const currentProfile = assertProfile(profile);
@@ -154,6 +158,8 @@ export async function recordReceipt({
       reference: reference ?? null,
       notes: notes ?? null,
     },
+    correlationId,
+    occurredAt,
   });
 }
 

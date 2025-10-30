@@ -114,7 +114,7 @@ const cancelBatchSchema = z.object({
   reason: z.string().trim().optional(),
 });
 
-type GenericForm = UseFormReturn<Record<string, unknown>>;
+type GenericForm = UseFormReturn<any>;
 
 export function MixingActions({
   stockpiles,

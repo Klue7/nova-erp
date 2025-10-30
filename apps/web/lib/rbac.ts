@@ -2,6 +2,12 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { createServerSupabaseClient } from "@/utils/supabase/server";
+import {
+  type Role,
+  ROLE_OPTIONS,
+  ROLE_ROUTE_MAP,
+  getDefaultRouteForRole,
+} from "@/lib/roles";
 
 export type UserProfile = {
   id: string;
@@ -9,51 +15,8 @@ export type UserProfile = {
   tenant_id: string;
   full_name: string | null;
   created_at: string | null;
+  is_platform_admin: boolean;
 };
-
-export type Role =
-  | "admin"
-  | "mining_operator"
-  | "stockpile_operator"
-  | "mixing_operator"
-  | "crushing_operator"
-  | "extrusion_operator"
-  | "dryyard_operator"
-  | "kiln_operator"
-  | "packing_operator"
-  | "dispatch_clerk"
-  | "sales_rep"
-  | "finance"
-  | "viewer";
-
-export const ROLE_ROUTE_MAP: Record<Role, string> = {
-  admin: "/dashboard",
-  mining_operator: "/mining",
-  stockpile_operator: "/stockpile",
-  mixing_operator: "/mixing",
-  crushing_operator: "/crushing",
-  extrusion_operator: "/extrusion",
-  dryyard_operator: "/dry-yard",
-  kiln_operator: "/kiln",
-  packing_operator: "/packing",
-  dispatch_clerk: "/dispatch",
-  sales_rep: "/sales",
-  finance: "/dashboard",
-  viewer: "/dashboard",
-};
-
-export const ROLE_OPTIONS: Array<{ value: Role; label: string }> =
-  Object.entries(ROLE_ROUTE_MAP).map(([value]) => ({
-    value: value as Role,
-    label: value
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase()),
-  }));
-
-export function getDefaultRouteForRole(role: Role | null | undefined) {
-  if (!role) return "/dashboard";
-  return ROLE_ROUTE_MAP[role] ?? "/dashboard";
-}
 
 export const getUserProfile = cache(async () => {
   const supabase = await createServerSupabaseClient();
@@ -67,7 +30,9 @@ export const getUserProfile = cache(async () => {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, role, tenant_id, full_name, created_at")
+    .select(
+      "id, role, tenant_id, full_name, created_at, is_platform_admin",
+    )
     .eq("id", session.user.id)
     .maybeSingle();
 
@@ -82,7 +47,7 @@ export const getUserProfile = cache(async () => {
 });
 
 type GuardOptions = {
-  requiredRole?: Role | Role[];
+  requiredRole?: (Role | "platform_admin") | Array<Role | "platform_admin">;
   requireProfile?: boolean;
 };
 
@@ -99,16 +64,34 @@ export async function guardRoute(options: GuardOptions = {}) {
   }
 
   if (requiredRole && profile) {
-    const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-    if (!roles.includes(profile.role)) {
-      redirect(getDefaultRouteForRole(profile.role));
+    if (!profile.is_platform_admin) {
+      const roles = Array.isArray(requiredRole)
+        ? requiredRole
+        : [requiredRole];
+      const matches = roles.some(
+        (role) => role === profile.role || role === "platform_admin",
+      );
+      if (!matches) {
+        redirect(
+          getDefaultRouteForRole(profile.role, {
+            isPlatformAdmin: profile.is_platform_admin,
+          }),
+        );
+      }
     }
   }
 
   return { session, profile };
 }
 
-export async function hasRole(role: Role) {
+export async function hasRole(role: Role | "platform_admin") {
   const { profile } = await getUserProfile();
-  return profile?.role === role;
+  if (!profile) return false;
+  if (role === "platform_admin") {
+    return profile.is_platform_admin;
+  }
+  return profile.role === role;
 }
+
+export { ROLE_OPTIONS, ROLE_ROUTE_MAP, getDefaultRouteForRole };
+export type { Role };

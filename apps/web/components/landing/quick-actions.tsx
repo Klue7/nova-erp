@@ -61,11 +61,12 @@ export function QuickActions() {
   return (
     <section
       id="quick-actions"
-      className="w-full border-y border-border/60 bg-muted/30 py-16"
+      className="w-full border-y border-border/60 bg-gradient-to-b from-background via-background to-muted/40 py-16"
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6">
         <div className="flex flex-col items-start gap-4 text-left">
-          <p className="text-sm font-medium uppercase tracking-wide text-primary">
+          <p className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary">
+            <span className="h-2 w-2 rounded-full bg-primary" />
             Quick Actions
           </p>
           <h2 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
@@ -80,10 +81,10 @@ export function QuickActions() {
           {ACTIONS.map((action) => (
             <Card
               key={action.title}
-              className="group flex flex-col justify-between border-border/70 transition hover:-translate-y-1 hover:border-primary/70 hover:shadow-lg"
+              className="group flex flex-col justify-between border border-border/70 bg-card/95 shadow-sm shadow-secondary/20 transition hover:-translate-y-1 hover:border-primary/60 hover:shadow-xl hover:shadow-primary/20"
             >
               <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/70 bg-background/80 text-primary shadow-sm">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-inner shadow-primary/20 transition group-hover:border-primary/50 group-hover:bg-primary/20">
                   <action.icon className="h-5 w-5" aria-hidden />
                 </div>
                 <CardTitle className="mt-4 text-xl text-foreground">
@@ -92,7 +93,7 @@ export function QuickActions() {
                 <CardDescription>{action.description}</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button asChild className="w-full">
+                <Button asChild className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90">
                   <Link href="/login">Open workflow</Link>
                 </Button>
               </CardContent>

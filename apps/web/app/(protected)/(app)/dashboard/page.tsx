@@ -8,7 +8,9 @@ import {
 export default async function DashboardPage() {
   const { profile } = await guardRoute();
 
-  const destination = getDefaultRouteForRole(profile?.role);
+  const destination = getDefaultRouteForRole(profile?.role, {
+    isPlatformAdmin: profile?.is_platform_admin,
+  });
 
   if (destination !== "/dashboard") {
     redirect(destination);

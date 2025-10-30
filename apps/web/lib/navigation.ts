@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3,
   Boxes,
   Factory,
   Flame,
@@ -7,8 +8,10 @@ import {
   LayoutDashboard,
   LineChart,
   Package,
+  Receipt,
   Pickaxe,
   Ruler,
+  Shield,
   Truck,
   Warehouse,
 } from "lucide-react";
@@ -26,6 +29,12 @@ export const MODULE_LINKS: ModuleLink[] = [
     href: "/dashboard",
     description: "Role-based KPIs and production insights.",
     icon: LayoutDashboard,
+  },
+  {
+    label: "Reports",
+    href: "/reports",
+    description: "Executive throughput, quality, and lead-time dashboards.",
+    icon: BarChart3,
   },
   {
     label: "Mining",
@@ -86,6 +95,18 @@ export const MODULE_LINKS: ModuleLink[] = [
     href: "/sales",
     description: "Manage orders, invoices, and customer updates.",
     icon: LineChart,
+  },
+  {
+    label: "Finance",
+    href: "/finance",
+    description: "Track invoices, payments, and accounts receivable aging.",
+    icon: Receipt,
+  },
+  {
+    label: "Admin",
+    href: "/admin",
+    description: "Manage tenants, memberships, invites, and audit trails.",
+    icon: Shield,
   },
 ];
 

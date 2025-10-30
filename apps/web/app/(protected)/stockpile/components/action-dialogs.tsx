@@ -38,7 +38,7 @@ type DialogProps = {
   stockpiles: StockpileOption[];
 };
 
-type GenericForm = UseFormReturn<Record<string, unknown>>;
+type GenericForm = UseFormReturn<any>;
 
 const createStockpileSchema = z.object({
   code: z.string().min(1, "Code is required."),
@@ -294,7 +294,7 @@ function TransferOutDialog({ stockpiles }: DialogProps) {
     defaultValues: {
       stockpileId: stockpiles[0]?.id ?? "",
       quantityTonnes: 0,
-      toStockpileId: null,
+      toStockpileId: undefined,
       reference: "",
       notes: "",
     },
@@ -314,7 +314,7 @@ function TransferOutDialog({ stockpiles }: DialogProps) {
         form.reset({
           stockpileId: stockpiles[0]?.id ?? "",
           quantityTonnes: 0,
-          toStockpileId: null,
+          toStockpileId: undefined,
           reference: "",
           notes: "",
         });
@@ -664,7 +664,7 @@ function StockpileSelect({
       </select>
       {form.formState.errors.stockpileId ? (
         <p className="text-xs text-destructive">
-          {form.formState.errors.stockpileId.message}
+          {String(form.formState.errors.stockpileId.message ?? "")}
         </p>
       ) : null}
     </div>
@@ -709,7 +709,7 @@ function TextField({
   form,
 }: {
   label: string;
-  fieldName: "reference" | "notes";
+  fieldName: string;
   placeholder: string;
   form: GenericForm;
 }) {

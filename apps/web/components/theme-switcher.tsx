@@ -30,7 +30,12 @@ const ThemeSwitcher = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size={"sm"}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="inline-flex items-center gap-2 border-border/60 bg-background/70 text-muted-foreground backdrop-blur hover:border-primary/60 hover:text-primary"
+          aria-label="Toggle theme"
+        >
           {theme === "light" ? (
             <Sun
               key="light"
@@ -50,6 +55,9 @@ const ThemeSwitcher = () => {
               className={"text-muted-foreground"}
             />
           )}
+          <span className="hidden text-xs font-medium uppercase tracking-wide md:inline">
+            Theme
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-content" align="start">
