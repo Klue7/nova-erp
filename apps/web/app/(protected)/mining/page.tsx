@@ -179,9 +179,15 @@ export default async function MiningPage() {
     null;
 
   const activeVehicleIds = new Set(activeShifts.map((shift) => shift.vehicle_id));
-  const availableVehicles = vehicles.filter(
-    (vehicle) => !activeVehicleIds.has(vehicle.id) && vehicle.status === "active",
-  );
+  const availableVehicles = vehicles
+    .filter((vehicle) => !activeVehicleIds.has(vehicle.id) && vehicle.status === "active")
+    .map((vehicle) => ({
+      id: vehicle.id,
+      code: vehicle.code,
+      type: vehicle.type,
+      capacityTonnes: vehicle.capacity_tonnes,
+      status: vehicle.status,
+    }));
 
   const stockpileOptions = stockpiles.map((item) => ({
     id: item.stockpile_id,
@@ -396,4 +402,3 @@ export default async function MiningPage() {
     </div>
   );
 }
-

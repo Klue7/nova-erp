@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { createVehicle, endShift, logLoad, startShift } from "@/lib/mining";
+import { createVehicle, endShift, logLoad, recordLoad, startShift } from "@/lib/mining";
 
 type ActionResult =
   | { ok: true }
@@ -93,6 +93,73 @@ export async function logLoadAction(raw: unknown): Promise<ActionResult> {
   }
 }
 
+export async function recordLoadAction(raw: unknown): Promise<ActionResult> {
+  try {
+    const input = z
+      .object({
+        shiftId: uuidSchema,
+        stockpileId: uuidSchema,
+        tonnage: z
+          .union([z.number(), z.string()])
+          .transform((value) => Number(value))
+          .refine((value) => Number.isFinite(value) && value > 0, {
+            message: "Tonnage must be greater than zero.",
+          }),
+        moisturePct: z
+          .union([z.number(), z.string(), z.null(), z.undefined()])
+          .transform((value) => {
+            if (value === null || value === undefined || value === "") {
+              return undefined;
+            }
+            if (typeof value === "number") {
+              return value;
+            }
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : Number.NaN;
+          })
+          .refine(
+            (value) =>
+              value === undefined ||
+              (Number.isFinite(value) && value >= 0 && value <= 100),
+            {
+              message: "Moisture must be between 0 and 100%.",
+            },
+          )
+          .optional(),
+        notes: z
+          .union([z.string(), z.null(), z.undefined()])
+          .transform((value) => {
+            if (typeof value !== "string") {
+              return undefined;
+            }
+            const trimmed = value.trim();
+            return trimmed.length > 0 ? trimmed : undefined;
+          })
+          .refine(
+            (value) => value === undefined || value.length <= 500,
+            {
+              message: "Notes should be shorter than 500 characters.",
+            },
+          )
+          .optional(),
+      })
+      .parse(raw);
+
+    await recordLoad({
+      shiftId: input.shiftId,
+      stockpileId: input.stockpileId,
+      tonnage: input.tonnage,
+      moisturePct:
+        input.moisturePct !== undefined ? Number(input.moisturePct) : undefined,
+      notes: input.notes,
+    });
+
+    return success();
+  } catch (error) {
+    return failure(error, "Unable to record load.");
+  }
+}
+
 export async function endShiftAction(raw: unknown): Promise<ActionResult> {
   try {
     const input = z.object({ shiftId: uuidSchema }).parse(raw);
@@ -102,4 +169,3 @@ export async function endShiftAction(raw: unknown): Promise<ActionResult> {
     return failure(error, "Unable to end shift.");
   }
 }
-

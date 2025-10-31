@@ -84,6 +84,12 @@ export function LoadRecorder({
     },
   });
 
+  useEffect(() => {
+    if (activeShiftId) {
+      form.setValue("shiftId", activeShiftId);
+    }
+  }, [activeShiftId, form]);
+
   if (!activeShiftId) {
     return (
       <div className="space-y-2">
@@ -110,16 +116,10 @@ export function LoadRecorder({
     );
   }
 
-  useEffect(() => {
-    if (activeShiftId) {
-      form.setValue("shiftId", activeShiftId);
-    }
-  }, [activeShiftId, form]);
-
   const onSubmit = form.handleSubmit((values) => {
     startTransition(async () => {
       try {
-        await recordLoadAction({
+        const result = await recordLoadAction({
           shiftId: values.shiftId,
           stockpileId: values.stockpileId,
           tonnage: values.tonnage,
@@ -127,6 +127,9 @@ export function LoadRecorder({
             typeof values.moisturePct === "number" ? values.moisturePct : undefined,
           notes: values.notes?.length ? values.notes : undefined,
         });
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
         toast({
           title: "Load logged",
           description: `Recorded ${values.tonnage.toLocaleString(undefined, {

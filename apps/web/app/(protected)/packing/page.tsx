@@ -204,6 +204,8 @@ export default async function PackingPage({
     }))
     .sort((a, b) => b.availableUnits - a.availableUnits);
 
+  const kilnBatchMap = new Map(kilnOptions.map((option) => [option.id, option.code]));
+
   let selectedDetail: PalletDetail | null = null;
 
   if (selectedPalletId) {

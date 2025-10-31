@@ -255,16 +255,46 @@ export async function startShift({ vehicleId }: { vehicleId: string }) {
   return { ...data, vehicleCode: vehicle.code };
 }
 
-export async function logLoad({
+function normalizeNotes(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeMaterial(value?: string | null) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function assertMoistureRange(value: number | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new Error("Moisture must be between 0 and 100%.");
+  }
+  return value;
+}
+
+export async function recordLoad({
   shiftId,
-  materialType,
-  quantityTonnes,
   stockpileId,
+  tonnage,
+  moisturePct,
+  notes,
+  materialType,
 }: {
   shiftId: string;
-  materialType: string;
-  quantityTonnes: number;
   stockpileId: string;
+  tonnage: number;
+  moisturePct?: number;
+  notes?: string;
+  materialType?: string | null;
 }) {
   const profile = await requireProfile();
   const shift = await fetchShift(shiftId, profile.tenant_id);
@@ -273,13 +303,8 @@ export async function logLoad({
     throw new Error("Only active shifts can record loads.");
   }
 
-  const material = materialType.trim();
-  if (!material) {
-    throw new Error("Material type is required.");
-  }
-
-  const quantity = Number(quantityTonnes);
-  ensurePositiveNumber(quantity, "Quantity");
+  const quantity = Number(tonnage);
+  ensurePositiveNumber(quantity, "Tonnage");
 
   const vehicle = await fetchVehicle(shift.vehicle_id, profile.tenant_id);
   const stockpile = await fetchStockpile(stockpileId, profile.tenant_id);
@@ -287,21 +312,34 @@ export async function logLoad({
 
   const supabase = await createServerSupabaseClient();
   const correlationId = randomUUID();
+  const loadId = randomUUID();
+  const occurredAt = new Date();
+  const safeNotes = normalizeNotes(notes);
+  const safeMaterial = normalizeMaterial(materialType);
+  const safeMoisture = assertMoistureRange(moisturePct);
 
   await logEvent(supabase, {
-    aggregateType: "mining_shift",
-    aggregateId: shift.id,
-    eventType: "HAUL_LOAD_PICKED",
+    aggregateType: "mining.load",
+    aggregateId: loadId,
+    eventType: "MINING_LOAD_RECORDED",
     payload: {
+      loadId,
       shiftId: shift.id,
       vehicleId: vehicle.id,
       vehicleCode: vehicle.code,
-      materialType: material,
-      quantityTonnes: quantity,
       stockpileId: stockpile.id,
       stockpileCode: stockpile.code,
+      operatorId: profile.id,
+      operatorName: profile.full_name ?? null,
+      operatorRole: profile.role,
+      tonnage: quantity,
+      moisturePct: safeMoisture ?? null,
+      notes: safeNotes,
+      materialType: safeMaterial,
+      recordedAt: occurredAt.toISOString(),
     },
     correlationId,
+    occurredAt,
   });
 
   await logEvent(supabase, {
@@ -314,10 +352,36 @@ export async function logLoad({
       shiftId: shift.id,
       vehicleId: vehicle.id,
       vehicleCode: vehicle.code,
-      materialType: material,
+      materialType: safeMaterial,
       quantityTonnes: quantity,
+      notes: safeNotes,
     },
     correlationId,
+    occurredAt,
+  });
+}
+
+export async function logLoad({
+  shiftId,
+  materialType,
+  quantityTonnes,
+  stockpileId,
+}: {
+  shiftId: string;
+  materialType: string;
+  quantityTonnes: number;
+  stockpileId: string;
+}) {
+  const material = materialType.trim();
+  if (!material) {
+    throw new Error("Material type is required.");
+  }
+
+  await recordLoad({
+    shiftId,
+    stockpileId,
+    tonnage: quantityTonnes,
+    materialType: material,
   });
 }
 
@@ -362,4 +426,3 @@ export async function endShift({ shiftId }: { shiftId: string }) {
 
   return data;
 }
-
