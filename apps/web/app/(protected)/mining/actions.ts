@@ -3,70 +3,103 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { endShift, recordLoad, startShift } from "@/lib/mining";
+import { createVehicle, endShift, logLoad, startShift } from "@/lib/mining";
 
-const startShiftSchema = z.object({
-  vehicleId: z.string().uuid("Select a vehicle."),
-});
+type ActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
-const endShiftSchema = z.object({
-  shiftId: z.string().uuid("Missing shift id."),
-});
+const uuidSchema = z.string().uuid("Invalid identifier");
 
-const moistureSchema = z.preprocess(
-  (value) => {
-    if (value === "" || value === null || value === undefined) {
-      return undefined;
-    }
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : value;
-  },
-  z.union([
-    z
-      .number({ invalid_type_error: "Moisture must be a number." })
-      .min(0, "Moisture must be between 0 and 100%.")
-      .max(100, "Moisture must be between 0 and 100%."),
-    z.undefined(),
-  ]),
-);
-
-const recordLoadSchema = z.object({
-  shiftId: z.string().uuid("Missing shift id."),
-  stockpileId: z.string().uuid("Select a stockpile."),
-  tonnage: z.coerce
-    .number({ invalid_type_error: "Enter a tonnage." })
-    .positive("Tonnage must be greater than zero."),
-  moisturePct: moistureSchema.optional(),
-  notes: z
-    .string()
-    .trim()
-    .max(500, "Notes should be shorter than 500 characters.")
-    .optional(),
-});
-
-export async function startShiftAction(raw: unknown) {
-  const input = startShiftSchema.parse(raw);
-  await startShift({ vehicleId: input.vehicleId });
+function success(): ActionResult {
   revalidatePath("/mining");
   return { ok: true };
 }
 
-export async function endShiftAction(raw: unknown) {
-  const input = endShiftSchema.parse(raw);
-  await endShift({ shiftId: input.shiftId });
-  revalidatePath("/mining");
-  return { ok: true };
+function failure(error: unknown, fallback: string): ActionResult {
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : fallback,
+  };
 }
 
-export async function recordLoadAction(raw: unknown) {
-  const input = recordLoadSchema.parse(raw);
-  await recordLoad({
-    shiftId: input.shiftId,
-    stockpileId: input.stockpileId,
-    tonnage: input.tonnage,
-    moisturePct: input.moisturePct ?? null,
-    notes: input.notes ?? null,
-  });
-  revalidatePath("/mining");
-  return { ok: true };
+export async function createVehicleAction(raw: unknown): Promise<ActionResult> {
+  try {
+    const input = z
+      .object({
+        code: z.string().min(1, "Vehicle code is required"),
+        type: z.string().trim().optional(),
+        capacityTonnes: z
+          .union([z.number(), z.string(), z.null(), z.undefined()])
+          .transform((value) => {
+            if (value === null || value === undefined || value === "") {
+              return undefined;
+            }
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : undefined;
+          })
+          .optional(),
+      })
+      .parse(raw);
+
+    await createVehicle({
+      code: input.code,
+      type: input.type ?? null,
+      capacityTonnes: input.capacityTonnes ?? null,
+    });
+
+    return success();
+  } catch (error) {
+    return failure(error, "Unable to register vehicle.");
+  }
 }
+
+export async function startShiftAction(raw: unknown): Promise<ActionResult> {
+  try {
+    const input = z.object({ vehicleId: uuidSchema }).parse(raw);
+    await startShift({ vehicleId: input.vehicleId });
+    return success();
+  } catch (error) {
+    return failure(error, "Unable to start shift.");
+  }
+}
+
+export async function logLoadAction(raw: unknown): Promise<ActionResult> {
+  try {
+    const input = z
+      .object({
+        shiftId: uuidSchema,
+        stockpileId: uuidSchema,
+        materialType: z.string().min(1, "Material type is required"),
+        quantityTonnes: z
+          .union([z.number(), z.string()])
+          .transform((value) => Number(value))
+          .refine((value) => Number.isFinite(value) && value > 0, {
+            message: "Quantity must be greater than zero",
+          }),
+      })
+      .parse(raw);
+
+    await logLoad({
+      shiftId: input.shiftId,
+      stockpileId: input.stockpileId,
+      materialType: input.materialType,
+      quantityTonnes: input.quantityTonnes,
+    });
+
+    return success();
+  } catch (error) {
+    return failure(error, "Unable to log load.");
+  }
+}
+
+export async function endShiftAction(raw: unknown): Promise<ActionResult> {
+  try {
+    const input = z.object({ shiftId: uuidSchema }).parse(raw);
+    await endShift({ shiftId: input.shiftId });
+    return success();
+  } catch (error) {
+    return failure(error, "Unable to end shift.");
+  }
+}
+

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailablePallets } from "@/lib/upstream";
 import { SalesKpiCards, type SalesKpi } from "./components/kpi-cards";
 import {
   SalesSidebar,
@@ -17,8 +18,10 @@ import {
 } from "./components/sales-detail";
 import type { SalesOrderRow } from "./components/orders-table";
 
+type SalesSearchParams = Record<string, string | string[] | undefined>;
+
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<SalesSearchParams>;
 };
 
 const VIEW_MISSING_CODE = "42P01";
@@ -32,6 +35,8 @@ export default async function SalesPage({ searchParams }: PageProps) {
     redirect("/onboarding");
   }
 
+  const params: SalesSearchParams = searchParams ? await searchParams : {};
+
   const supabase = await createServerSupabaseClient();
   const tenantId = profile.tenant_id;
 
@@ -44,7 +49,6 @@ export default async function SalesPage({ searchParams }: PageProps) {
     customersResult,
     productsResult,
     pricesResult,
-    inventoryResult,
     palletLookupResult,
     locationsResult,
   ] = await Promise.all([
@@ -79,10 +83,6 @@ export default async function SalesPage({ searchParams }: PageProps) {
       .from("current_product_price_v")
       .select("product_id, unit_price, currency")
       .eq("tenant_id", tenantId),
-    supabase
-      .from("pallet_inventory_live_v")
-      .select("pallet_id, code, product_sku, grade, location_id, units_available")
-      .eq("tenant_id", tenantId),
     supabase.from("pallets").select("id, code").eq("tenant_id", tenantId),
     supabase.from("pack_locations").select("id, code").eq("tenant_id", tenantId),
   ]);
@@ -104,9 +104,6 @@ export default async function SalesPage({ searchParams }: PageProps) {
   if (productsResult.error) throw productsResult.error;
   if (pricesResult.error && pricesResult.error.code !== VIEW_MISSING_CODE) {
     throw pricesResult.error;
-  }
-  if (inventoryResult.error && inventoryResult.error.code !== VIEW_MISSING_CODE) {
-    throw inventoryResult.error;
   }
   if (palletLookupResult.error) throw palletLookupResult.error;
   if (locationsResult.error) throw locationsResult.error;
@@ -215,7 +212,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
     };
   });
 
-  const orderParam = searchParams?.order;
+  const orderParam = params.order;
   const orderParamValue =
     typeof orderParam === "string" ? orderParam : Array.isArray(orderParam) ? orderParam[0] : null;
   const selectedOrderId = orderRows.some((order) => order.id === orderParamValue)
@@ -264,16 +261,15 @@ export default async function SalesPage({ searchParams }: PageProps) {
   const selectedReservations: ReservationRow[] =
     (selectedOrderId ? reservationsByOrder.get(selectedOrderId) : null) ?? [];
 
-  const inventoryRows: AvailablePalletRow[] = (inventoryResult.data ?? [])
-    .filter((row) => Number(row.units_available ?? 0) > 0)
-    .map((row) => ({
-      palletId: row.pallet_id,
-      code: row.code,
-      productSku: row.product_sku,
-      grade: row.grade,
-      locationCode: row.location_id ? locationCodeMap.get(row.location_id) ?? null : null,
-      unitsAvailable: Number(row.units_available ?? 0),
-    }));
+  const availablePallets = await listAvailablePallets();
+  const inventoryRows: AvailablePalletRow[] = availablePallets.map((pallet) => ({
+    palletId: pallet.id,
+    code: pallet.code,
+    productSku: pallet.productSku ?? null,
+    grade: pallet.grade ?? null,
+    locationCode: pallet.locationId ? locationCodeMap.get(pallet.locationId) ?? null : null,
+    unitsAvailable: pallet.unitsAvailable,
+  }));
 
   const selectedOrder: SelectedOrder | null =
     selectedOrderBase && selectedOrderRow

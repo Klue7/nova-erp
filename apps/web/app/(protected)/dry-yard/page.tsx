@@ -10,13 +10,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailableForDry } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["dryyard_operator", "admin"];
 const VIEW_MISSING_CODE = "42P01";
 
+type DryYardSearchParams = Record<string, string | string[] | undefined>;
+
 type DryYardPageProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<DryYardSearchParams>;
 };
 
 type RackDisplay = {
@@ -103,33 +106,18 @@ export default async function DryYardPage({
     .eq("tenant_id", profile.tenant_id)
     .maybeSingle();
 
-  const extrusionAvailabilityQuery = supabase
-    .from("extrusion_available_for_drying_v")
-    .select("extrusion_run_id, available_units")
-    .eq("tenant_id", profile.tenant_id)
-    .gt("available_units", 0);
-
-  const extrusionRunsQuery = supabase
-    .from("extrusion_runs")
-    .select("id, code")
-    .eq("tenant_id", profile.tenant_id);
-
   const [
     racksRes,
     occupancyRes,
     loadsRes,
     metricsRes,
     kpiRes,
-    extrusionAvailabilityRes,
-    extrusionRunsRes,
   ] = await Promise.all([
     racksQuery,
     occupancyQuery,
     loadsQuery,
     metricsQuery,
     kpiQuery,
-    extrusionAvailabilityQuery,
-    extrusionRunsQuery,
   ]);
 
   if (racksRes.error) throw new Error(racksRes.error.message);
@@ -143,16 +131,6 @@ export default async function DryYardPage({
   if (metricsRes.error && !isViewMissing(metricsRes.error)) {
     throw new Error(metricsRes.error.message);
   }
-  if (
-    extrusionAvailabilityRes.error &&
-    !isViewMissing(extrusionAvailabilityRes.error)
-  ) {
-    throw new Error(extrusionAvailabilityRes.error.message);
-  }
-  if (extrusionRunsRes.error) {
-    throw new Error(extrusionRunsRes.error.message);
-  }
-
   const occupancyMap = new Map<string, number>();
   (occupancyRes.data ?? []).forEach((row) => {
     occupancyMap.set(
@@ -199,9 +177,11 @@ export default async function DryYardPage({
       };
     });
 
-  const searchSelected = Array.isArray(searchParams.load)
-    ? searchParams.load[0]
-    : searchParams.load;
+  const params = await searchParams;
+
+  const searchSelected = Array.isArray(params.load)
+    ? params.load[0]
+    : params.load;
 
   const selectedLoadId = (() => {
     if (searchSelected && loads.some((load) => load.id === searchSelected)) {
@@ -213,23 +193,16 @@ export default async function DryYardPage({
     return loads[0]?.id ?? null;
   })();
 
-  const extrusionRunMap = new Map(
-    (extrusionRunsRes.data ?? []).map((run) => [
-      run.id,
-      run.code,
-    ]),
-  );
-
-  const extrusionOptions: ExtrusionOption[] = (
-    extrusionAvailabilityRes.data ?? []
-  )
-    .map((row) => ({
-      id: row.extrusion_run_id,
-      code: extrusionRunMap.get(row.extrusion_run_id) ?? "Extrusion run",
-      availableUnits: numberOrZero(row.available_units),
+  const extrusionOptions: ExtrusionOption[] = (await listAvailableForDry())
+    .map((option) => ({
+      id: option.id,
+      code: option.code,
+      availableUnits: option.availableUnits,
     }))
-    .filter((option) => option.availableUnits > 0)
     .sort((a, b) => b.availableUnits - a.availableUnits);
+  const extrusionRunMap = new Map(
+    extrusionOptions.map((option) => [option.id, option.code]),
+  );
 
   let selectedInputs: Array<{
     runId: string;

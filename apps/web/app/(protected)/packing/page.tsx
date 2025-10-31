@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailableForPacking } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["packing_operator", "admin"] as const;
@@ -78,7 +79,7 @@ function numberOrZero(value: unknown) {
 export default async function PackingPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   const { profile } = await guardRoute();
 
@@ -121,30 +122,16 @@ export default async function PackingPage({
     .eq("tenant_id", profile.tenant_id)
     .order("code", { ascending: true });
 
-  const kilnAvailabilityQuery = supabase
-    .from("kiln_available_for_packing_v")
-    .select("kiln_batch_id, available_units")
-    .eq("tenant_id", profile.tenant_id);
-
-  const kilnBatchesQuery = supabase
-    .from("kiln_batches")
-    .select("id, code, status")
-    .eq("tenant_id", profile.tenant_id);
-
   const [
     palletsRes,
     inventoryRes,
     kpiRes,
     locationsRes,
-    kilnAvailabilityRes,
-    kilnBatchesRes,
   ] = await Promise.all([
     palletsQuery,
     inventoryQuery,
     kpiQuery,
     locationsQuery,
-    kilnAvailabilityQuery,
-    kilnBatchesQuery,
   ]);
 
   if (palletsRes.error) {
@@ -153,18 +140,12 @@ export default async function PackingPage({
   if (locationsRes.error) {
     throw new Error(locationsRes.error.message);
   }
-  if (kilnBatchesRes.error) {
-    throw new Error(kilnBatchesRes.error.message);
-  }
 
   if (inventoryRes.error && !isViewMissing(inventoryRes.error)) {
     throw new Error(inventoryRes.error.message);
   }
   if (kpiRes.error && !isViewMissing(kpiRes.error)) {
     throw new Error(kpiRes.error.message);
-  }
-  if (kilnAvailabilityRes.error && !isViewMissing(kilnAvailabilityRes.error)) {
-    throw new Error(kilnAvailabilityRes.error.message);
   }
 
   const inventoryMap = new Map(
@@ -196,9 +177,11 @@ export default async function PackingPage({
     } satisfies PalletRow;
   });
 
-  const paramsValue = Array.isArray(searchParams.pallet)
-    ? searchParams.pallet[0]
-    : searchParams.pallet;
+  const params = await searchParams;
+
+  const paramsValue = Array.isArray(params.pallet)
+    ? params.pallet[0]
+    : params.pallet;
   const selectedPalletId = paramsValue && pallets.some((p) => p.id === paramsValue)
     ? paramsValue
     : pallets[0]?.id ?? null;
@@ -213,17 +196,13 @@ export default async function PackingPage({
     }),
   );
 
-  const kilnBatchMap = new Map(
-    (kilnBatchesRes.data ?? []).map((batch) => [batch.id, batch.code ?? "Batch"]),
-  );
-
-  const kilnOptions: KilnOption[] = (kilnAvailabilityRes.data ?? [])
-    .map((row) => ({
-      id: row.kiln_batch_id,
-      code: kilnBatchMap.get(row.kiln_batch_id) ?? row.kiln_batch_id,
-      availableUnits: numberOrZero(row.available_units),
+  const kilnOptions: KilnOption[] = (await listAvailableForPacking())
+    .map((option) => ({
+      id: option.id,
+      code: option.code,
+      availableUnits: option.availableUnits,
     }))
-    .filter((option) => option.availableUnits > 0);
+    .sort((a, b) => b.availableUnits - a.availableUnits);
 
   let selectedDetail: PalletDetail | null = null;
 

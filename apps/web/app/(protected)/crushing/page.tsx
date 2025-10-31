@@ -18,13 +18,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailableForCrushing } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["crushing_operator", "admin"];
 const VIEW_MISSING_CODE = "42P01";
 
+type CrushingSearchParams = Record<string, string | string[] | undefined>;
+
 type CrushingPageProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<CrushingSearchParams>;
 };
 
 type ComponentAggregate = {
@@ -110,31 +113,16 @@ export default async function CrushingPage({ searchParams }: CrushingPageProps) 
     .eq("tenant_id", profile.tenant_id)
     .maybeSingle();
 
-  const mixAvailabilityQuery = supabase
-    .from("mix_available_for_crushing_v")
-    .select("batch_id, available_tonnes")
-    .eq("tenant_id", profile.tenant_id)
-    .gt("available_tonnes", 0);
-
-  const mixBatchesQuery = supabase
-    .from("mix_batches")
-    .select("id, code, completed_at")
-    .eq("tenant_id", profile.tenant_id);
-
   const [
     runsRes,
     metricsRes,
     outputsRes,
     kpiRes,
-    mixAvailabilityRes,
-    mixBatchesRes,
   ] = await Promise.all([
     runsQuery,
     metricsQuery,
     outputsQuery,
     kpiQuery,
-    mixAvailabilityQuery,
-    mixBatchesQuery,
   ]);
 
   if (runsRes.error) throw new Error(runsRes.error.message);
@@ -144,11 +132,6 @@ export default async function CrushingPage({ searchParams }: CrushingPageProps) 
   if (outputsRes.error && !isViewMissing(outputsRes.error)) {
     throw new Error(outputsRes.error.message);
   }
-  if (mixAvailabilityRes.error && !isViewMissing(mixAvailabilityRes.error)) {
-    throw new Error(mixAvailabilityRes.error.message);
-  }
-  if (mixBatchesRes.error) throw new Error(mixBatchesRes.error.message);
-
   const runs = runsRes.data ?? [];
   const metricRows = (metricsRes.data ?? []) as NonNullable<
     typeof metricsRes.data
@@ -164,9 +147,11 @@ export default async function CrushingPage({ searchParams }: CrushingPageProps) 
   const outputsMap = new Map<string, OutputsRow>();
   outputRows.forEach((row) => outputsMap.set(row.run_id, row));
 
-  const searchSelected = Array.isArray(searchParams.run)
-    ? searchParams.run[0]
-    : searchParams.run;
+  const params = await searchParams;
+
+  const searchSelected = Array.isArray(params.run)
+    ? params.run[0]
+    : params.run;
 
   const runTableRows: RunRow[] = runs
     .filter((run) => run.status === "planned" || run.status === "active")
@@ -253,19 +238,13 @@ export default async function CrushingPage({ searchParams }: CrushingPageProps) 
     };
   })();
 
-  const mixAvailability = new Map<string, number>();
-  (mixAvailabilityRes.data ?? []).forEach((row) => {
-    mixAvailability.set(row.batch_id, Number(row.available_tonnes ?? 0));
-  });
-
-  const mixBatches: MixBatchOption[] = (mixBatchesRes.data ?? [])
-    .map((batch) => ({
-      id: batch.id,
-      code: batch.code,
-      completedAt: batch.completed_at ?? null,
-      availableTonnes: mixAvailability.get(batch.id) ?? 0,
+  const mixBatches: MixBatchOption[] = (await listAvailableForCrushing())
+    .map((option) => ({
+      id: option.id,
+      code: option.code,
+      completedAt: option.completedAt,
+      availableTonnes: option.availableTonnes,
     }))
-    .filter((item) => item.availableTonnes > 0)
     .sort((a, b) => b.availableTonnes - a.availableTonnes);
 
   const kpiData = kpiRes.error && !isViewMissing(kpiRes.error) ? null : kpiRes.data ?? null;

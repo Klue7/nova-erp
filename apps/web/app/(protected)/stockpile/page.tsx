@@ -32,7 +32,7 @@ type StockpileRow = {
 type BalanceRow = {
   stockpile_id: string;
   available_tonnes: number | null;
-  last_movement_at: string | null;
+  last_movement_at?: string | null;
 };
 
 type QualityRow = {
@@ -111,7 +111,7 @@ export default async function StockpilePage() {
         .order("code", { ascending: true }),
       supabase
         .from("stockpile_balances_v")
-        .select("stockpile_id, available_tonnes, last_movement_at")
+        .select("stockpile_id, available_tonnes")
         .eq("tenant_id", profile.tenant_id),
       supabase
         .from("stockpile_quality_latest")

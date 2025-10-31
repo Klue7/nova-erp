@@ -18,13 +18,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailableForMixing } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["mixing_operator", "admin"];
 const VIEW_MISSING_CODE = "42P01";
 
+type MixingSearchParams = Record<string, string | string[] | undefined>;
+
 type MixingPageProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<MixingSearchParams>;
 };
 
 type ComponentAggregate = {
@@ -79,17 +82,6 @@ export default async function MixingPage({ searchParams }: MixingPageProps) {
     .eq("tenant_id", profile.tenant_id)
     .maybeSingle();
 
-  const stockpilesQuery = supabase
-    .from("stockpiles")
-    .select("id, code, name")
-    .eq("tenant_id", profile.tenant_id)
-    .order("code", { ascending: true });
-
-  const stockpileBalancesQuery = supabase
-    .from("stockpile_balances_v")
-    .select("stockpile_id, available_tonnes")
-    .eq("tenant_id", profile.tenant_id);
-
   const lastCompletedEventQuery = supabase
     .from("mixing_events")
     .select("payload, occurred_at")
@@ -102,15 +94,11 @@ export default async function MixingPage({ searchParams }: MixingPageProps) {
     batchesRes,
     inputsRes,
     kpiRes,
-    stockpilesRes,
-    balancesRes,
     completedEventsRes,
   ] = await Promise.all([
     batchesQuery,
     inputsQuery,
     kpiQuery,
-    stockpilesQuery,
-    stockpileBalancesQuery,
     lastCompletedEventQuery,
   ]);
 
@@ -138,9 +126,11 @@ export default async function MixingPage({ searchParams }: MixingPageProps) {
       startedAt: batch.started_at,
     }));
 
-  const searchSelected = Array.isArray(searchParams.batch)
-    ? searchParams.batch[0]
-    : searchParams.batch;
+  const params = await searchParams;
+
+  const searchSelected = Array.isArray(params.batch)
+    ? params.batch[0]
+    : params.batch;
 
   const selectedBatchId = (() => {
     if (searchSelected && allBatches.some((batch) => batch.id === searchSelected)) {
@@ -188,23 +178,11 @@ export default async function MixingPage({ searchParams }: MixingPageProps) {
     );
   }
 
-  const stockpileMap = new Map<string, number>();
-  if (balancesRes.error && !isViewMissing(balancesRes.error)) {
-    throw new Error(balancesRes.error.message);
-  }
-  (balancesRes.data ?? []).forEach((balance) => {
-    stockpileMap.set(balance.stockpile_id, Number(balance.available_tonnes ?? 0));
-  });
-
-  if (stockpilesRes.error) {
-    throw new Error(stockpilesRes.error.message);
-  }
-
-  const stockpileOptions = (stockpilesRes.data ?? []).map((stockpile) => ({
-    id: stockpile.id,
-    code: stockpile.code,
-    name: stockpile.name,
-    availableTonnes: stockpileMap.get(stockpile.id) ?? 0,
+  const stockpileOptions = (await listAvailableForMixing()).map((option) => ({
+    id: option.id,
+    code: option.code,
+    name: null,
+    availableTonnes: option.availableTonnes,
   }));
 
   const componentOptions = components

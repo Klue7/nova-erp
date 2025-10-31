@@ -10,13 +10,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailableForKiln } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["kiln_operator", "admin"];
 const VIEW_MISSING_CODE = "42P01";
 
+type KilnSearchParams = Record<string, string | string[] | undefined>;
+
 type KilnPageProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<KilnSearchParams>;
 };
 
 type DryLoadOption = {
@@ -85,44 +88,20 @@ export default async function KilnPage({ searchParams }: KilnPageProps) {
     .eq("tenant_id", profile.tenant_id)
     .maybeSingle();
 
-  const dryAvailabilityQuery = supabase
-    .from("dry_available_for_kiln_v")
-    .select("load_id, available_units")
-    .eq("tenant_id", profile.tenant_id)
-    .gt("available_units", 0);
-
-  const dryLoadsQuery = supabase
-    .from("dry_loads")
-    .select("id, code, completed_at")
-    .eq("tenant_id", profile.tenant_id)
-    .not("completed_at", "is", null);
-
   const [
     batchesRes,
     metricsRes,
     kpiRes,
-    dryAvailabilityRes,
-    dryLoadsRes,
   ] = await Promise.all([
     batchesQuery,
     metricsQuery,
     kpiQuery,
-    dryAvailabilityQuery,
-    dryLoadsQuery,
   ]);
 
   if (batchesRes.error) throw new Error(batchesRes.error.message);
   if (metricsRes.error && !isViewMissing(metricsRes.error)) {
     throw new Error(metricsRes.error.message);
   }
-  if (
-    dryAvailabilityRes.error &&
-    !isViewMissing(dryAvailabilityRes.error)
-  ) {
-    throw new Error(dryAvailabilityRes.error.message);
-  }
-  if (dryLoadsRes.error) throw new Error(dryLoadsRes.error.message);
-
   const batches = batchesRes.data ?? [];
   const metricRows = (metricsRes.data ?? []) as NonNullable<
     typeof metricsRes.data
@@ -152,9 +131,11 @@ export default async function KilnPage({ searchParams }: KilnPageProps) {
       };
     });
 
-  const searchSelected = Array.isArray(searchParams.batch)
-    ? searchParams.batch[0]
-    : searchParams.batch;
+  const params = await searchParams;
+
+  const searchSelected = Array.isArray(params.batch)
+    ? params.batch[0]
+    : params.batch;
 
   const selectedBatchId = (() => {
     if (searchSelected && batches.some((batch) => batch.id === searchSelected)) {
@@ -166,18 +147,16 @@ export default async function KilnPage({ searchParams }: KilnPageProps) {
     return batches[0]?.id ?? null;
   })();
 
-  const dryLoadCodeMap = new Map(
-    (dryLoadsRes.data ?? []).map((load) => [load.id, load.code ?? "Dry load"]),
-  );
-
-  const dryOptions: DryLoadOption[] = (dryAvailabilityRes.data ?? [])
-    .map((row) => ({
-      id: row.load_id,
-      code: dryLoadCodeMap.get(row.load_id) ?? "Dry load",
-      availableUnits: numberOrZero(row.available_units),
+  const dryOptions: DryLoadOption[] = (await listAvailableForKiln())
+    .map((option) => ({
+      id: option.id,
+      code: option.code,
+      availableUnits: option.availableUnits,
     }))
-    .filter((item) => item.availableUnits > 0)
     .sort((a, b) => b.availableUnits - a.availableUnits);
+  const dryLoadCodeMap = new Map(
+    dryOptions.map((option) => [option.id, option.code]),
+  );
 
   const kpiData =
     kpiRes.error && !isViewMissing(kpiRes.error) ? null : kpiRes.data ?? null;

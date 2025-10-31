@@ -18,13 +18,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailableForExtrusion } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["extrusion_operator", "admin"];
 const VIEW_MISSING_CODE = "42P01";
 
+type ExtrusionSearchParams = Record<string, string | string[] | undefined>;
+
 type ExtrusionPageProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<ExtrusionSearchParams>;
 };
 
 type InputAggregate = {
@@ -122,41 +125,22 @@ export default async function ExtrusionPage({
     .order("occurred_at", { ascending: false })
     .limit(5);
 
-  const crushAvailabilityQuery = supabase
-    .from("crush_available_for_extrusion_v")
-    .select("crush_run_id, available_tonnes")
-    .eq("tenant_id", profile.tenant_id)
-    .gt("available_tonnes", 0);
-
-  const crushRunsQuery = supabase
-    .from("crush_runs")
-    .select("id, code, completed_at")
-    .eq("tenant_id", profile.tenant_id);
-
   const [
     runsRes,
     metricsRes,
     kpiRes,
     completedRes,
-    crushAvailabilityRes,
-    crushRunsRes,
   ] = await Promise.all([
     runsQuery,
     metricsQuery,
     kpiQuery,
     completedQuery,
-    crushAvailabilityQuery,
-    crushRunsQuery,
   ]);
 
   if (runsRes.error) throw new Error(runsRes.error.message);
   if (metricsRes.error && !isViewMissing(metricsRes.error)) {
     throw new Error(metricsRes.error.message);
   }
-  if (crushAvailabilityRes.error && !isViewMissing(crushAvailabilityRes.error)) {
-    throw new Error(crushAvailabilityRes.error.message);
-  }
-  if (crushRunsRes.error) throw new Error(crushRunsRes.error.message);
   if (completedRes.error && !isViewMissing(completedRes.error)) {
     throw new Error(completedRes.error.message);
   }
@@ -169,9 +153,11 @@ export default async function ExtrusionPage({
   const metricsMap = new Map<string, MetricsRow>();
   metricRows.forEach((row) => metricsMap.set(row.run_id, row));
 
-  const searchSelected = Array.isArray(searchParams.run)
-    ? searchParams.run[0]
-    : searchParams.run;
+  const params = await searchParams;
+
+  const searchSelected = Array.isArray(params.run)
+    ? params.run[0]
+    : params.run;
 
   const runTableRows: RunRow[] = runs
     .filter((run) =>
@@ -268,21 +254,12 @@ export default async function ExtrusionPage({
     };
   })();
 
-  const availabilityMap = new Map<string, number>();
-  (crushAvailabilityRes.data ?? []).forEach((row) => {
-    availabilityMap.set(
-      row.crush_run_id,
-      Number(row.available_tonnes ?? 0),
-    );
-  });
-
-  const crushOptions: CrushRunOption[] = (crushRunsRes.data ?? [])
-    .map((run) => ({
-      id: run.id,
-      code: run.code,
-      availableTonnes: availabilityMap.get(run.id) ?? 0,
+  const crushOptions: CrushRunOption[] = (await listAvailableForExtrusion())
+    .map((option) => ({
+      id: option.id,
+      code: option.code,
+      availableTonnes: option.availableTonnes,
     }))
-    .filter((option) => option.availableTonnes > 0)
     .sort((a, b) => b.availableTonnes - a.availableTonnes);
 
   const kpiData =

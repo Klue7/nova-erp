@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { LoadRecorder } from "./components/load-recorder";
-import { ShiftControls } from "./components/shift-controls";
+import {
+  CreateVehicleDialog,
+  EndShiftButton,
+  LogLoadDialog,
+  StartShiftDialog,
+} from "./components/mining-actions";
 import {
   Card,
   CardContent,
@@ -20,42 +24,45 @@ import {
 import { guardRoute } from "@/lib/rbac";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
-const ALLOWED_ROLES = ["mining_operator", "admin"];
-const VIEW_MISSING_CODE = "42P01";
-
 type VehicleRow = {
   id: string;
   code: string;
-  description: string | null;
+  type: string | null;
+  capacity_tonnes: number | null;
+  status: string;
 };
 
-type StockpileRow = {
+type ShiftRow = {
   id: string;
-  code: string;
-  name: string | null;
-};
-
-type ShiftSummaryRow = {
-  shift_id: string;
-  vehicle_code: string;
+  vehicle_id: string;
+  operator_id: string | null;
   status: string;
   started_at: string;
-  total_tonnage: number | string | null;
-  load_count: number | null;
-  avg_moisture_pct: number | string | null;
-  last_load_at: string | null;
+  ended_at: string | null;
+};
+
+type StockpileBalanceRow = {
+  stockpile_id: string;
+  code: string;
+  available_tonnes: number | null;
+};
+
+type KpiRow = {
+  loads_today: number | null;
+  tonnes_today: number | null;
+  active_vehicles: number | null;
 };
 
 type LoadRow = {
-  load_id: string;
   shift_id: string;
-  occurred_at: string;
-  vehicle_code: string | null;
-  stockpile_code: string | null;
-  tonnage: number | string | null;
-  moisture_pct: number | string | null;
-  notes: string | null;
+  picked_tonnes: number | null;
+  dumped_tonnes: number | null;
+  loads_picked: number | null;
+  loads_dumped: number | null;
 };
+
+const ALLOWED_ROLES = ["mining_operator", "admin", "platform_admin"];
+const VIEW_MISSING_CODE = "42P01";
 
 function isViewMissing(error: unknown) {
   return (
@@ -66,39 +73,25 @@ function isViewMissing(error: unknown) {
   );
 }
 
-function isRelationMissing(error: unknown) {
-  if (typeof error !== "object" || error === null) return false;
-  const code = (error as { code?: string }).code;
-  const message = ((error as { message?: string }).message ?? "").toLowerCase();
-
-  return (
-    code === VIEW_MISSING_CODE ||
-    code === "PGRST301" ||
-    code === "PGRST100" ||
-    message.includes("schema cache") ||
-    message.includes("does not exist")
-  );
+function safeNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return 0;
+  }
+  return Number(value);
 }
 
-function isParseError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: string }).code === "22P02"
-  );
-}
-
-function safeNumber(value: number | string | null | undefined) {
-  if (value === null || value === undefined) return 0;
-  const num = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(num) ? num : 0;
-}
-
-function formatNumber(value: number, digits = 1) {
+function formatNumber(value: number, fractionDigits = 1) {
   return value.toLocaleString(undefined, {
-    maximumFractionDigits: digits,
-    minimumFractionDigits: digits,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   });
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
 }
 
 export default async function MiningPage() {
@@ -108,296 +101,295 @@ export default async function MiningPage() {
     return null;
   }
 
-  if (
-    !profile.is_platform_admin &&
-    !ALLOWED_ROLES.includes(profile.role)
-  ) {
+  if (!ALLOWED_ROLES.includes(profile.role)) {
     redirect("/dashboard?toast=access-denied");
   }
 
   const supabase = await createServerSupabaseClient();
 
-  const vehiclesQuery = supabase
-    .from("mining_vehicles")
-    .select("id, code, description")
-    .eq("tenant_id", profile.tenant_id)
-    .eq("status", "active")
-    .order("code", { ascending: true });
+  const [
+    vehiclesRes,
+    activeShiftsRes,
+    recentShiftsRes,
+    stockpilesRes,
+    kpiRes,
+    loadsRes,
+  ] = await Promise.all([
+    supabase
+      .from("mining_vehicles")
+      .select("id, code, type, capacity_tonnes, status")
+      .eq("tenant_id", profile.tenant_id)
+      .order("code", { ascending: true }),
+    supabase
+      .from("haul_shifts")
+      .select("id, vehicle_id, operator_id, status, started_at, ended_at")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("status", "active"),
+    supabase
+      .from("haul_shifts")
+      .select("id, vehicle_id, operator_id, status, started_at, ended_at")
+      .eq("tenant_id", profile.tenant_id)
+      .order("started_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("stockpile_balances_v")
+      .select("stockpile_id, code, available_tonnes")
+      .eq("tenant_id", profile.tenant_id)
+      .order("code", { ascending: true }),
+    supabase
+      .from("mining_kpi_today")
+      .select("loads_today, tonnes_today, active_vehicles")
+      .eq("tenant_id", profile.tenant_id)
+      .maybeSingle(),
+    supabase
+      .from("mining_shift_loads_v")
+      .select("shift_id, picked_tonnes, dumped_tonnes, loads_picked, loads_dumped")
+      .eq("tenant_id", profile.tenant_id),
+  ]);
 
-  const stockpilesQuery = supabase
-    .from("stockpiles")
-    .select("id, code, name")
-    .eq("tenant_id", profile.tenant_id)
-    .order("code", { ascending: true });
+  const vehicles = (vehiclesRes.data ?? []) as VehicleRow[];
+  const activeShifts = (activeShiftsRes.data ?? []) as ShiftRow[];
+  const recentShifts = (recentShiftsRes.data ?? []) as ShiftRow[];
+  const stockpiles = (stockpilesRes.data ?? []) as StockpileBalanceRow[];
+  const loads = (loadsRes.data ?? []) as LoadRow[];
 
-  const activeShiftQuery = supabase
-    .from("mining_shift_summary_v")
-    .select(
-      "shift_id, vehicle_code, status, started_at, total_tonnage, load_count, avg_moisture_pct, last_load_at",
-    )
-    .eq("tenant_id", profile.tenant_id)
-    .eq("operator_id", profile.id)
-    .eq("status", "active")
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const viewError = [
+    vehiclesRes.error,
+    activeShiftsRes.error,
+    recentShiftsRes.error,
+    stockpilesRes.error,
+    loadsRes.error,
+  ]
+    .filter(Boolean)
+    .find((error) => !isViewMissing(error));
 
-  const loadsQuery = supabase
-    .from("mining_loads_v")
-    .select(
-      "load_id, shift_id, occurred_at, vehicle_code, stockpile_code, tonnage, moisture_pct, notes",
-    )
-    .eq("tenant_id", profile.tenant_id)
-    .eq("operator_id", profile.id)
-    .order("occurred_at", { ascending: false })
-    .limit(50);
-
-  const [vehiclesRes, stockpilesRes, activeShiftRes, loadsRes] =
-    await Promise.all([
-      vehiclesQuery,
-      stockpilesQuery,
-      activeShiftQuery,
-      loadsQuery,
-    ]);
-
-  let vehicles: VehicleRow[] = [];
-  if (vehiclesRes.error) {
-    if (!isRelationMissing(vehiclesRes.error) && !isParseError(vehiclesRes.error)) {
-      throw new Error(vehiclesRes.error.message);
-    } else {
-      console.warn("mining.vehicles", vehiclesRes.error);
-    }
-  } else {
-    vehicles = (vehiclesRes.data ?? []) as VehicleRow[];
+  if (viewError) {
+    console.error("mining.dashboard", viewError);
   }
 
-  if (stockpilesRes.error) {
-    if (!isRelationMissing(stockpilesRes.error) && !isParseError(stockpilesRes.error)) {
-      throw new Error(stockpilesRes.error.message);
-    } else {
-      console.warn("mining.stockpiles", stockpilesRes.error);
-    }
-  }
-  const stockpiles = (stockpilesRes.data ?? []) as StockpileRow[];
+  const vehicleMap = new Map<string, VehicleRow>();
+  vehicles.forEach((vehicle) => vehicleMap.set(vehicle.id, vehicle));
 
-  let activeShift: ShiftSummaryRow | null = null;
-  if (activeShiftRes.error) {
-    if (!isRelationMissing(activeShiftRes.error) && activeShiftRes.error.code !== "PGRST116") {
-      throw new Error(activeShiftRes.error.message);
-    }
-  } else {
-    activeShift = (activeShiftRes.data as ShiftSummaryRow | null) ?? null;
-  }
+  const shiftMap = new Map<string, ShiftRow>();
+  recentShifts.forEach((shift) => shiftMap.set(shift.id, shift));
 
-  let loads: LoadRow[] = [];
-  if (loadsRes.error) {
-    if (!isRelationMissing(loadsRes.error) && !isParseError(loadsRes.error)) {
-      throw new Error(loadsRes.error.message);
-    } else {
-      console.warn("mining.loads", loadsRes.error);
-    }
-  } else {
-    loads = (loadsRes.data ?? []) as LoadRow[];
-  }
+  const activeShift =
+    activeShifts.find((shift) => shift.operator_id === profile.id) ??
+    activeShifts[0] ??
+    null;
 
-  const activeShiftDetails = activeShift
-    ? {
-        shiftId: activeShift.shift_id,
-        vehicleCode: activeShift.vehicle_code,
-        startedAt: activeShift.started_at,
-        totalTonnage: safeNumber(activeShift.total_tonnage),
-        loadCount: Number(activeShift.load_count ?? 0),
-        avgMoisturePct:
-          activeShift.avg_moisture_pct === null
-            ? null
-            : safeNumber(activeShift.avg_moisture_pct),
-        lastLoadAt: activeShift.last_load_at,
-      }
-    : null;
+  const activeVehicleIds = new Set(activeShifts.map((shift) => shift.vehicle_id));
+  const availableVehicles = vehicles.filter(
+    (vehicle) => !activeVehicleIds.has(vehicle.id) && vehicle.status === "active",
+  );
 
-  const normalizedLoads = loads.map((load) => ({
-    id: load.load_id,
-    shiftId: load.shift_id,
-    occurredAt: load.occurred_at,
-    vehicleCode: load.vehicle_code ?? "—",
-    stockpileCode: load.stockpile_code ?? "—",
-    tonnage: safeNumber(load.tonnage),
-    moisturePct:
-      load.moisture_pct === null
-        ? null
-        : safeNumber(load.moisture_pct),
-    notes: load.notes,
+  const stockpileOptions = stockpiles.map((item) => ({
+    id: item.stockpile_id,
+    code: item.code,
+    availableTonnes: safeNumber(item.available_tonnes),
   }));
 
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const loadsToday = normalizedLoads.filter((load) =>
-    load.occurredAt.startsWith(todayKey),
-  );
+  const kpiData = (kpiRes.data ?? {
+    loads_today: 0,
+    tonnes_today: 0,
+    active_vehicles: 0,
+  }) as KpiRow;
 
-  const loadsThisShift = activeShiftDetails
-    ? normalizedLoads.filter(
-        (load) => load.shiftId === activeShiftDetails.shiftId,
-      )
-    : [];
-
-  const shiftTonnage = loadsThisShift.reduce(
-    (sum, load) => sum + load.tonnage,
-    0,
-  );
-  const shiftLoadCount = loadsThisShift.length;
-  const moistureSamples = loadsThisShift.filter(
-    (load) => load.moisturePct !== null && load.moisturePct !== undefined,
-  );
-  const shiftAvgMoisture =
-    moistureSamples.length > 0
-      ? moistureSamples.reduce(
-          (sum, load) => sum + (load.moisturePct ?? 0),
-          0,
-        ) / moistureSamples.length
-      : null;
-
-  const todayTonnage = loadsToday.reduce(
-    (sum, load) => sum + load.tonnage,
-    0,
-  );
-
-  const kpis = [
-    {
-      title: "Shift tonnage",
-      value:
-        shiftLoadCount > 0
-          ? `${formatNumber(shiftTonnage)} t`
-          : activeShiftDetails
-            ? "0 t"
-            : "—",
-      helper: activeShiftDetails
-        ? `Vehicle ${activeShiftDetails.vehicleCode}${
-            shiftAvgMoisture !== null && Number.isFinite(shiftAvgMoisture)
-              ? ` • Avg moisture ${formatNumber(shiftAvgMoisture, 2)} %`
-              : ""
-          }`
-        : "No active shift",
-    },
-    {
-      title: "Loads this shift",
-      value: shiftLoadCount.toString(),
-      helper: shiftLoadCount === 1 ? "1 load logged" : `${shiftLoadCount} loads logged`,
-    },
-    {
-      title: "Loads today",
-      value: loadsToday.length.toString(),
-      helper:
-        loadsToday.length > 0
-          ? `${formatNumber(todayTonnage)} t captured`
-          : "No loads yet today",
-    },
-    {
-      title: "Available vehicles",
-      value: vehicles.length.toString(),
-      helper: "Active vehicles ready to assign",
-    },
-  ];
+  const formattedLoads = loads
+    .map((row) => ({
+      shift: shiftMap.get(row.shift_id) ?? null,
+      data: row,
+    }))
+    .filter((entry) => entry.shift)
+    .sort((a, b) =>
+      (b.shift?.started_at ?? "").localeCompare(a.shift?.started_at ?? ""),
+    )
+    .slice(0, 10)
+    .map((entry) => {
+      const vehicle = entry.shift ? vehicleMap.get(entry.shift.vehicle_id) ?? null : null;
+      const picked = safeNumber(entry.data.picked_tonnes);
+      const dumped = safeNumber(entry.data.dumped_tonnes);
+      return {
+        shiftId: entry.shift!.id,
+        vehicleCode: vehicle?.code ?? "Unknown vehicle",
+        startedAt: entry.shift!.started_at,
+        loadsPicked: safeNumber(entry.data.loads_picked),
+        loadsDumped: safeNumber(entry.data.loads_dumped),
+        tonnesPicked: picked,
+        tonnesDumped: dumped,
+      };
+    });
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold text-foreground">
-          Mining operations
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Assign equipment, capture haulage loads, and stream real-time events into stockpile inventory.
-        </p>
-      </header>
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi) => (
-          <KpiCard key={kpi.title} title={kpi.title} value={kpi.value} helper={kpi.helper} />
-        ))}
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle>Shift assignment</CardTitle>
-            <CardDescription>
-              Select a vehicle to begin your shift or release it when completed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ShiftControls vehicles={vehicles} activeShift={activeShiftDetails} />
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle>Log load</CardTitle>
-            <CardDescription>
-              Record each haul to keep stockpile balances accurate. Entries emit paired events.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LoadRecorder
-              activeShiftId={activeShiftDetails?.shiftId ?? null}
-              stockpiles={stockpiles}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold text-foreground">Recent loads</h2>
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Mining</h1>
           <p className="text-sm text-muted-foreground">
-            Latest haulage events captured for this operator. Use the stockpile module for full history.
+            Manage haul shifts, log pit loads, and monitor stockpile receipts in real time.
           </p>
         </div>
-        <Card className="border-border/70">
-          <CardContent className="p-0">
-            {normalizedLoads.length === 0 ? (
-              <div className="flex flex-col gap-2 p-6 text-sm text-muted-foreground">
-                <p>No loads recorded yet.</p>
-                <p>Start a shift and log a load to populate the stream.</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CreateVehicleDialog />
+          <StartShiftDialog vehicles={availableVehicles} />
+          <LogLoadDialog
+            shiftId={activeShift ? activeShift.id : null}
+            stockpiles={stockpileOptions}
+          />
+          <EndShiftButton shiftId={activeShift ? activeShift.id : null} />
+        </div>
+      </header>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Loads today</CardTitle>
+            <CardDescription>Loads dumped across all vehicles</CardDescription>
+          </CardHeader>
+          <CardContent className="text-3xl font-semibold">
+            {formatNumber(safeNumber(kpiData.loads_today), 0)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Tonnes today</CardTitle>
+            <CardDescription>Material delivered to stockpiles</CardDescription>
+          </CardHeader>
+          <CardContent className="text-3xl font-semibold">
+            {formatNumber(safeNumber(kpiData.tonnes_today))}
+            <span className="ml-1 text-sm text-muted-foreground">t</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Active vehicles</CardTitle>
+            <CardDescription>Vehicles currently in shift</CardDescription>
+          </CardHeader>
+          <CardContent className="text-3xl font-semibold">
+            {formatNumber(safeNumber(kpiData.active_vehicles), 0)}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Vehicles</CardTitle>
+            <CardDescription>Fleet status and availability</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Capacity (t)</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {vehicles.length === 0 ? (
                   <TableRow>
-                    <TableHead className="w-40">Occurred</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Stockpile</TableHead>
-                    <TableHead className="text-right">Tonnage (t)</TableHead>
-                    <TableHead className="text-right">Moisture %</TableHead>
-                    <TableHead>Notes</TableHead>
+                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                      No vehicles registered yet.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {normalizedLoads.map((load) => (
-                    <TableRow key={load.id}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {new Date(load.occurredAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-sm text-foreground">
-                        {load.vehicleCode}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {load.stockpileCode}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {formatNumber(load.tonnage)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {load.moisturePct !== null && load.moisturePct !== undefined
-                          ? formatNumber(load.moisturePct, 2)
+                ) : (
+                  vehicles.map((vehicle) => (
+                    <TableRow key={vehicle.id}>
+                      <TableCell className="font-medium">{vehicle.code}</TableCell>
+                      <TableCell>{vehicle.type ?? "—"}</TableCell>
+                      <TableCell>
+                        {vehicle.capacity_tonnes
+                          ? formatNumber(vehicle.capacity_tonnes)
                           : "—"}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {load.notes ?? "—"}
+                      <TableCell className="capitalize">
+                        {activeVehicleIds.has(vehicle.id) ? "Active" : vehicle.status}
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Stockpiles</CardTitle>
+            <CardDescription>Live balances (tonnes)</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Stockpile</TableHead>
+                  <TableHead className="text-right">Available (t)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stockpiles.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center text-sm text-muted-foreground">
+                      No stockpiles recorded yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  stockpiles.map((row) => (
+                    <TableRow key={row.stockpile_id}>
+                      <TableCell className="font-medium">{row.code}</TableCell>
+                      <TableCell className="text-right">
+                        {formatNumber(safeNumber(row.available_tonnes))}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent loads</CardTitle>
+            <CardDescription>Aggregated per shift</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Shift started</TableHead>
+                  <TableHead>Vehicle</TableHead>
+                  <TableHead className="text-right">Loads (picked / dumped)</TableHead>
+                  <TableHead className="text-right">Tonnes (picked / dumped)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {formattedLoads.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                      No loads recorded yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  formattedLoads.map((row) => (
+                    <TableRow key={row.shiftId}>
+                      <TableCell>{formatDate(row.startedAt)}</TableCell>
+                      <TableCell>{row.vehicleCode}</TableCell>
+                      <TableCell className="text-right">
+                        {formatNumber(row.loadsPicked, 0)} / {formatNumber(row.loadsDumped, 0)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatNumber(row.tonnesPicked)} / {formatNumber(row.tonnesDumped)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </section>
@@ -405,24 +397,3 @@ export default async function MiningPage() {
   );
 }
 
-function KpiCard({
-  title,
-  value,
-  helper,
-}: {
-  title: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <Card className="border-border/70">
-      <CardHeader className="space-y-1">
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="text-2xl text-foreground">{value}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">{helper}</p>
-      </CardContent>
-    </Card>
-  );
-}

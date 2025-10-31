@@ -7,13 +7,16 @@
     "start:web": "pnpm --filter web start",
     "lint:web": "pnpm --filter web lint",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "seed:demo:reset": "tsx scripts/reset-demo.ts"
+    "seed:demo:reset": "tsx scripts/reset-demo.ts",
+    "import:prices": "tsx scripts/import-price-list.ts"
   },
   "devDependencies": {
     "@faker-js/faker": "^10.1.0",
     "@supabase/supabase-js": "^2.76.1",
     "dotenv": "^17.2.3",
+    "papaparse": "^5.5.3",
     "tsx": "^4.20.6",
+    "xlsx": "^0.18.5",
     "zod": "^3.25.76"
   }
 }

@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { guardRoute } from "@/lib/rbac";
+import { listAvailablePallets } from "@/lib/upstream";
 import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 const ALLOWED_ROLES = ["dispatch_clerk", "admin"] as const;
@@ -87,7 +88,7 @@ function numberOrZero(value: unknown) {
 export default async function DispatchPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   const { profile } = await guardRoute();
 
@@ -117,22 +118,14 @@ export default async function DispatchPage({
     .eq("tenant_id", profile.tenant_id)
     .maybeSingle();
 
-  const availablePalletsQuery = supabase
-    .from("pallet_inventory_live_v")
-    .select("pallet_id, code, product_sku, grade, units_available, location_id")
-    .eq("tenant_id", profile.tenant_id)
-    .gt("units_available", 0)
-    .order("code", { ascending: true });
-
   const locationsQuery = supabase
     .from("pack_locations")
     .select("id, code")
     .eq("tenant_id", profile.tenant_id);
 
-  const [shipmentsRes, kpiRes, palletsRes, locationsRes] = await Promise.all([
+  const [shipmentsRes, kpiRes, locationsRes] = await Promise.all([
     shipmentsQuery,
     kpiQuery,
-    availablePalletsQuery,
     locationsQuery,
   ]);
 
@@ -143,9 +136,6 @@ export default async function DispatchPage({
     throw new Error(locationsRes.error.message);
   }
 
-  if (palletsRes.error && !isViewMissing(palletsRes.error)) {
-    throw new Error(palletsRes.error.message);
-  }
   if (kpiRes.error && !isViewMissing(kpiRes.error)) {
     throw new Error(kpiRes.error.message);
   }
@@ -160,9 +150,11 @@ export default async function DispatchPage({
     createdAt: row.created_at ?? null,
   }));
 
-  const selectedParam = Array.isArray(searchParams.shipment)
-    ? searchParams.shipment[0]
-    : searchParams.shipment;
+  const params = await searchParams;
+
+  const selectedParam = Array.isArray(params.shipment)
+    ? params.shipment[0]
+    : params.shipment;
   const selectedShipmentId =
     selectedParam && shipments.some((shipment) => shipment.id === selectedParam)
       ? selectedParam
@@ -179,14 +171,14 @@ export default async function DispatchPage({
     (locationsRes.data ?? []).map((location) => [location.id, location.code]),
   );
 
-  const availablePallets: AvailablePallet[] = (palletsRes.data ?? []).map(
-    (row) => ({
-      palletId: row.pallet_id,
-      code: row.code,
-      productSku: row.product_sku ?? null,
-      grade: row.grade ?? null,
-      unitsAvailable: numberOrZero(row.units_available),
-      locationCode: row.location_id ? locationMap.get(row.location_id) ?? null : null,
+  const availablePallets: AvailablePallet[] = (await listAvailablePallets()).map(
+    (pallet) => ({
+      palletId: pallet.id,
+      code: pallet.code,
+      productSku: pallet.productSku,
+      grade: pallet.grade,
+      unitsAvailable: pallet.unitsAvailable,
+      locationCode: pallet.locationId ? locationMap.get(pallet.locationId) ?? null : null,
     }),
   );
 
